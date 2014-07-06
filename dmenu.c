@@ -4,7 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <wordexp.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -35,6 +38,7 @@ static void keypress(XKeyEvent *ev);
 static void match(void);
 static size_t nextrune(int inc);
 static void paste(void);
+static Bool matchfile_maybe(void);
 static void readstdin(void);
 static void run(void);
 static void setup(void);
@@ -47,6 +51,7 @@ static size_t cursor = 0;
 static unsigned long normcol[ColLast];
 static unsigned long selcol[ColLast];
 static unsigned long outcol[ColLast];
+static Bool matchfile_enabled = False;
 static Atom clip, utf8;
 static DC *dc;
 static Item *items = NULL;
@@ -79,6 +84,9 @@ main(int argc, char *argv[]) {
 		else if(!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
 			fstrncmp = strncasecmp;
 			fstrstr = cistrstr;
+		}
+		else if(!strcmp(argv[i], "-c")) { /* file name tab completion */
+			matchfile_enabled = True;
 		}
 		else if(i+1 == argc)
 			usage();
@@ -227,7 +235,8 @@ insert(const char *str, ssize_t n) {
 	if(strlen(text) + n > sizeof text - 1)
 		return;
 	/* move existing text out of the way, insert new text, and update cursor */
-	memmove(&text[cursor + n], &text[cursor], sizeof text - cursor - MAX(n, 0));
+	memmove(&text[cursor + n], &text[cursor],
+		sizeof text - cursor - MAX(n, 0));
 	if(n > 0)
 		memcpy(&text[cursor], str, n);
 	cursor += n;
@@ -387,6 +396,8 @@ keypress(XKeyEvent *ev) {
 		}
 		break;
 	case XK_Tab:
+		if (matchfile_maybe())
+			break;
 		if(!sel)
 			return;
 		strncpy(text, sel->text, sizeof text - 1);
@@ -474,6 +485,86 @@ paste(void) {
 	insert(p, (q = strchr(p, '\n')) ? q-p : (ssize_t)strlen(p));
 	XFree(p);
 	drawmenu();
+}
+
+Bool
+matchfile_maybe(void) {
+	static int wrde_flags;
+	static wordexp_t exp;
+
+	char *const end = text + (sizeof text - 1);
+	char *ch, *src, *word = NULL;
+	struct stat buf;
+	unsigned i;
+
+	if (!matchfile_enabled) {
+		return False;
+	}
+
+	/* Expansion supported only at the end of line at this point. */
+	if (text[cursor]) {
+		return False;
+	}
+
+	/* Need enough space to insert star. */
+	if (cursor + 1 >= sizeof text) {
+		return False;
+	}
+
+	/* Do file match expansion if text consists of multiple words
+	 * or the first word contains slashes. */
+	for (ch = text; *ch; ++ch) {
+		if (isspace(*ch)) {
+			word = ch + 1;
+		} else if (!word && *ch == '/') {
+			word = text;
+		}
+	}
+
+	if (!word || !*word) {
+		return False;
+	}
+
+	/* Perform expansion */
+	ch[0] = '*';
+	ch[1] = 0;
+
+	if (wordexp(word, &exp, wrde_flags) ||
+	    (wrde_flags |= WRDE_REUSE, !exp.we_wordc) ||
+	    !strcmp(word, exp.we_wordv[0])) {
+		*ch = 0;  /* Eat "*" */
+		return True;
+	}
+
+	/* Check if anything actually changed */
+
+	/* Copy the first expansion */
+	ch = word;
+	src = exp.we_wordv[0];
+	while (ch != end && (*ch = *src++)) {
+		++ch;
+	}
+	*ch = 0;
+
+	/* Compare with all the other expansions so we get the common part. */
+	for (i = 1; i < exp.we_wordc; ++i) {
+		ch = word;
+		src = exp.we_wordv[i];
+		while (*ch && *ch == *src++) {
+			++ch;
+		}
+		*ch = 0;
+	}
+
+	/* If there was only one match, add slash or space */
+	if (exp.we_wordc == 1 && ch != end && *ch != '/' &&
+	    stat(word, &buf) == 0) {
+		*ch++ = S_ISDIR(buf.st_mode) ? '/' : ' ';
+		*ch = 0;
+	}
+
+	cursor = ch - text;
+	return True;
 }
 
 void
@@ -619,7 +710,7 @@ setup(void) {
 
 void
 usage(void) {
-	fputs("usage: dmenu [-b] [-f] [-i] [-l lines] [-p prompt] [-fn font] [-m monitor]\n"
-	      "             [-nb color] [-nf color] [-sb color] [-sf color] [-v]\n", stderr);
+	fputs("usage: dmenu [-b] [-c] [-f] [-i] [-v] [-l lines] [-p prompt] [-fn font]\n"
+	      "             [-m monitor] [-nb color] [-nf color] [-sb color] [-sf color]\n", stderr);
 	exit(EXIT_FAILURE);
 }

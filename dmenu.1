@@ -6,6 +6,7 @@ dmenu \- dynamic menu
 .RB [ \-b ]
 .RB [ \-f ]
 .RB [ \-i ]
+.RB [ \-c ]
 .RB [ \-l
 .RB [ \-m
 .IR monitor ]
@@ -48,6 +49,9 @@ X until stdin reaches end\-of\-file.
 .B \-i
 dmenu matches menu items case insensitively.
 .TP
+.B \-c
+enables file-name expansion when C\-i (or Tab) is pressed.
+.TP
 .BI \-l " lines"
 dmenu lists items vertically, with the given number of lines.
 .TP
@@ -82,7 +86,12 @@ dmenu is completely controlled by the keyboard.  Items are selected using the
 arrow keys, page up, page down, home, and end.
 .TP
 .B Tab
-Copy the selected item to the input field.
+If \-c option is in effect and the text consists of at least two words
+or contains a slash character, perform a word expansion on the last
+word (which may be the only word if it contains a slash).
+
+If \-c is not given or the above conditions are not met, copy the
+selected item to the input field.
 .TP
 .B Return
 Confirm selection.  Prints the selected item to stdout and exits, returning
