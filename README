@@ -22,3 +22,17 @@ Afterwards enter the following command to build and install dmenu
 Running dmenu
 -------------
 See the man page for details.
+
+
+Changes to original dmenu
+-------------------------
+
+Compared to the original dmenu, this repository adds tab-completion
+for file names.  To enable that feature the executable must be run
+with a “-c” flag at which point pressing tab while cursor is at the
+end of the entered text and the text consist of multiple words or
+contains a slash will invoke file-name expansion for the last word on
+the line.
+
+One known-bug is that the code won't deal well with file names that
+contain white space character in them.
